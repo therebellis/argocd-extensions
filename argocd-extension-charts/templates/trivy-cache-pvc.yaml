@@ -1,0 +1,18 @@
+{{- if .Values.backend.trivyCache.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: trivy-cache
+  namespace: {{ .Values.backend.namespace }}
+  labels:
+    {{- include "cve-scanner.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.backend.trivyCache.storageSize }}
+  {{- if .Values.backend.trivyCache.storageClassName }}
+  storageClassName: {{ .Values.backend.trivyCache.storageClassName }}
+  {{- end }}
+{{- end }}

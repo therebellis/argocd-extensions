@@ -35,9 +35,12 @@ backend:
       cpu: 500m
       memory: 512Mi
 
-  # Optional: set to a PVC name to persist the Trivy DB cache across pod restarts.
-  # When empty, the DB is re-downloaded after each pod restart (~30-60 s on first scan).
-  trivyCachePVC: ""
+  # Trivy vulnerability DB cache — persists the DB across pod restarts so Trivy
+  # does not need to re-download it on every restart (~100 MB, updated daily by Trivy).
+  trivyCache:
+    enabled: true          # set to false to disable the PVC entirely
+    storageSize: 2Gi
+    storageClassName: ""   # leave empty to use the cluster default StorageClass
 
 # ── Extension proxy config ────────────────────────────────────────────────────
 extension:

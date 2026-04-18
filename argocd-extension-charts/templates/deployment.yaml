@@ -43,14 +43,14 @@ spec:
             periodSeconds: 30
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
-          {{- if .Values.backend.trivyCachePVC }}
+          {{- if .Values.backend.trivyCache.enabled }}
           volumeMounts:
             - name: trivy-cache
               mountPath: /home/appuser/.cache
           {{- end }}
-      {{- if .Values.backend.trivyCachePVC }}
+      {{- if .Values.backend.trivyCache.enabled }}
       volumes:
         - name: trivy-cache
           persistentVolumeClaim:
-            claimName: {{ .Values.backend.trivyCachePVC }}
+            claimName: trivy-cache
       {{- end }}

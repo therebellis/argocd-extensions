@@ -44,6 +44,17 @@ Trivy output to only those images — so each Application only shows its own CVE
 ## Installation
 
 ```bash
+helm repo add argocd-extensions https://therebellis.github.io/argocd-extensions/
+helm repo update
+helm install cve-scanner argocd-extensions/cve-scanner \
+  --set argocd.namespace=argocd \
+  --set backend.image.repository=gboie/cve-argocd-backend \
+  --set backend.image.tag=1.0.0
+```
+
+Or directly from the git repo without adding it as a repo:
+
+```bash
 git clone https://github.com/therebellis/argocd-extensions.git
 helm install cve-scanner argocd-extensions/argocd-extension-charts \
   --set argocd.namespace=argocd \
@@ -61,17 +72,11 @@ The post-install Job will:
 ## Upgrade
 
 ```bash
-helm upgrade cve-scanner argocd-extensions/argocd-extension-charts \
+helm repo update
+helm upgrade cve-scanner argocd-extensions/cve-scanner \
   --set argocd.namespace=argocd \
   --set backend.image.repository=gboie/cve-argocd-backend \
   --set backend.image.tag=1.0.0
-```
-
-To pull the latest chart before upgrading:
-
-```bash
-cd argocd-extensions && git pull
-helm upgrade cve-scanner argocd-extensions/argocd-extension-charts ...
 ```
 
 ## Uninstall
@@ -112,7 +117,9 @@ All values and their defaults:
 | `backend.resources.requests.memory` | `128Mi` | |
 | `backend.resources.limits.cpu` | `500m` | |
 | `backend.resources.limits.memory` | `512Mi` | |
-| `backend.trivyCachePVC` | `""` | PVC name to persist the Trivy vulnerability DB across pod restarts. When empty the DB is re-downloaded on each restart (~30–60 s on first scan) |
+| `backend.trivyCache.enabled` | `true` | Create a PVC to persist the Trivy DB across pod restarts |
+| `backend.trivyCache.storageSize` | `2Gi` | PVC size |
+| `backend.trivyCache.storageClassName` | `""` | StorageClass (empty = cluster default) |
 
 ### `extension.*`
 
@@ -123,26 +130,39 @@ All values and their defaults:
 | `extension.keepAlive` | `15s` | Proxy keep-alive interval |
 | `extension.maxIdleConnections` | `10` | Proxy max idle connections |
 
-## Persisting the Trivy DB
+## Trivy vulnerability database
 
-By default Trivy downloads its vulnerability database on the first scan after
-each pod restart. To avoid this, create a PVC and set `backend.trivyCachePVC`:
+Trivy ships no bundled vulnerability data. Instead it downloads a pre-built
+database (~100 MB) from the [trivy-db](https://github.com/aquasecurity/trivy-db)
+project, which is published daily to `ghcr.io/aquasecurity/trivy-db`. When
+Trivy runs a scan it checks whether the local copy is older than 12 hours; if
+so it pulls the latest release before scanning. This means:
+
+- **First scan after a pod restart** — Trivy downloads the full DB (~30–60 s
+  on a normal connection) before returning results.
+- **Subsequent scans within 12 hours** — DB is read from the local cache
+  instantly; only the scan itself takes time.
+- **After 12 hours** — Trivy transparently re-downloads the updated DB in the
+  background before the next scan.
+
+### Persisting the cache across pod restarts
+
+The chart creates a `2Gi` PVC named `trivy-cache` in the backend namespace by
+default. This means the downloaded DB survives pod restarts and image upgrades —
+Trivy only re-fetches when its 12-hour TTL expires.
+
+To disable the PVC (e.g., on clusters without dynamic provisioning):
 
 ```bash
-kubectl -n cve-scanner apply -f - <<EOF
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: trivy-cache
-  namespace: cve-scanner
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 1Gi
-EOF
+helm install cve-scanner ... --set backend.trivyCache.enabled=false
+```
 
-helm upgrade cve-scanner ... --set backend.trivyCachePVC=trivy-cache
+To change the storage size or StorageClass:
+
+```bash
+helm install cve-scanner ... \
+  --set backend.trivyCache.storageSize=5Gi \
+  --set backend.trivyCache.storageClassName=standard
 ```
 
 ## RBAC model
