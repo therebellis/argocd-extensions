@@ -44,16 +44,7 @@ Trivy output to only those images — so each Application only shows its own CVE
 ## Installation
 
 ```bash
-helm install cve-scanner oci://... \   # or path to the chart directory
-  --set argocd.namespace=argocd \
-  --set backend.image.repository=gboie/cve-argocd-backend \
-  --set backend.image.tag=1.0.0
-```
-
-Or from the GitHub repo:
-
-```bash
-git clone git@github.com:therebellis/argocd-extensions.git
+git clone https://github.com/therebellis/argocd-extensions.git
 helm install cve-scanner argocd-extensions/argocd-extension-charts \
   --set argocd.namespace=argocd \
   --set backend.image.repository=gboie/cve-argocd-backend \
@@ -74,6 +65,13 @@ helm upgrade cve-scanner argocd-extensions/argocd-extension-charts \
   --set argocd.namespace=argocd \
   --set backend.image.repository=gboie/cve-argocd-backend \
   --set backend.image.tag=1.0.0
+```
+
+To pull the latest chart before upgrading:
+
+```bash
+cd argocd-extensions && git pull
+helm upgrade cve-scanner argocd-extensions/argocd-extension-charts ...
 ```
 
 ## Uninstall
