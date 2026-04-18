@@ -1,0 +1,153 @@
+{{/*
+  Post-install / post-upgrade Job that patches the existing ArgoCD installation:
+    1. Adds extension.config to argocd-cm
+    2. Adds CVE extension RBAC to argocd-rbac-cm
+    3. Mounts the extension JS and enables --enable-proxy-extension on argocd-server (idempotent)
+    4. Rolls out argocd-server to pick up the changes
+*/}}
+---
+# ServiceAccount for the patch job
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cve-scanner-patcher
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "cve-scanner.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+---
+# Role granting the job permission to patch ArgoCD resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cve-scanner-patcher
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "cve-scanner.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/rollout"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cve-scanner-patcher
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "cve-scanner.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+subjects:
+  - kind: ServiceAccount
+    name: cve-scanner-patcher
+    namespace: {{ .Values.argocd.namespace }}
+roleRef:
+  kind: Role
+  name: cve-scanner-patcher
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cve-scanner-argocd-patch
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "cve-scanner.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    metadata:
+      labels:
+        app: cve-scanner-patcher
+    spec:
+      serviceAccountName: cve-scanner-patcher
+      restartPolicy: OnFailure
+      containers:
+        - name: patcher
+          image: bitnami/kubectl:latest
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              ARGOCD_NS="{{ .Values.argocd.namespace }}"
+              BACKEND_URL="{{ include "cve-scanner.backendURL" . }}"
+              EXT_NAME="{{ .Values.extension.name }}"
+              DEPLOY="{{ .Values.argocd.serverDeploymentName }}"
+
+              echo "==> Patching argocd-cm (extension.config)..."
+              kubectl -n "$ARGOCD_NS" patch configmap argocd-cm --type merge -p "
+              {\"data\":{
+                \"admin.enabled\":\"true\",
+                \"extension.config\":\"extensions:\n  - name: ${EXT_NAME}\n    backend:\n      connectionTimeout: {{ .Values.extension.connectionTimeout }}\n      keepAlive: {{ .Values.extension.keepAlive }}\n      maxIdleConnections: {{ .Values.extension.maxIdleConnections }}\n      services:\n        - url: ${BACKEND_URL}\n\"
+              }}"
+
+              echo "==> Patching argocd-rbac-cm..."
+              kubectl -n "$ARGOCD_NS" patch configmap argocd-rbac-cm --type merge -p \
+                "{\"data\":{
+                  \"policy.csv\":\"p, {{ .Values.argocd.rbac.adminRole }}, extensions, invoke, ${EXT_NAME}, allow\ng, {{ .Values.argocd.rbac.adminUser }}, {{ .Values.argocd.rbac.adminRole }}\n\",
+                  \"policy.default\":\"{{ .Values.argocd.rbac.defaultPolicy }}\"
+                }}"
+
+              echo "==> Checking if argocd-server already has --enable-proxy-extension..."
+              CURRENT_ARGS=$(kubectl -n "$ARGOCD_NS" get deployment "$DEPLOY" \
+                -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null || echo "")
+
+              if echo "$CURRENT_ARGS" | grep -q "enable-proxy-extension"; then
+                echo "    Already configured — skipping deployment patch."
+              else
+                echo "==> Patching $DEPLOY deployment (init container + volume + proxy flag)..."
+                kubectl -n "$ARGOCD_NS" patch deployment "$DEPLOY" --type=json -p='[
+                  {
+                    "op": "replace",
+                    "path": "/spec/template/spec/containers/0/args",
+                    "value": ["/usr/local/bin/argocd-server", "--enable-proxy-extension"]
+                  },
+                  {
+                    "op": "add",
+                    "path": "/spec/template/spec/initContainers",
+                    "value": [{
+                      "name": "cve-extension-loader",
+                      "image": "busybox:1.35",
+                      "command": ["sh","-c","mkdir -p /tmp/extensions && cp /ext-src/extension.js /tmp/extensions/extension_cve.js"],
+                      "volumeMounts": [
+                        {"name":"cve-ext-src","mountPath":"/ext-src"},
+                        {"name":"tmp","mountPath":"/tmp"}
+                      ]
+                    }]
+                  },
+                  {
+                    "op": "add",
+                    "path": "/spec/template/spec/volumes/-",
+                    "value": {
+                      "name": "cve-ext-src",
+                      "configMap": {"name": "argocd-cve-extension"}
+                    }
+                  }
+                ]'
+              fi
+
+              echo "==> Rolling out $DEPLOY..."
+              kubectl -n "$ARGOCD_NS" rollout restart deployment/"$DEPLOY"
+              kubectl -n "$ARGOCD_NS" rollout status deployment/"$DEPLOY" --timeout=180s
+
+              echo "==> Done. CVE extension is active."

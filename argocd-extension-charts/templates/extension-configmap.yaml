@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cve-extension
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "cve-scanner.labels" . | nindent 4 }}
+data:
+  extension.js: |
+{{ .Files.Get "files/extension.js" | indent 4 }}

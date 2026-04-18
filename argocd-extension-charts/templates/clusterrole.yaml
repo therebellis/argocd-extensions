@@ -1,0 +1,35 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cve-backend
+  labels:
+    {{- include "cve-scanner.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "namespaces", "replicationcontrollers",
+                "services", "resourcequotas", "limitranges"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cve-backend
+  labels:
+    {{- include "cve-scanner.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: cve-backend
+    namespace: {{ .Values.backend.namespace }}
+roleRef:
+  kind: ClusterRole
+  name: cve-backend
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,50 @@
+# ── ArgoCD installation ───────────────────────────────────────────────────────
+argocd:
+  # Namespace where ArgoCD is installed
+  namespace: argocd
+
+  # Name of the ArgoCD server Deployment
+  serverDeploymentName: argocd-server
+
+  # ArgoCD RBAC — which user/group is granted permission to invoke the extension
+  rbac:
+    adminUser: admin
+    adminRole: "role:admin"
+    defaultPolicy: "role:readonly"
+
+# ── CVE backend ───────────────────────────────────────────────────────────────
+backend:
+  # Namespace to deploy the cve-backend into (created if it does not exist)
+  namespace: cve-scanner
+
+  image:
+    repository: therebellis/cve-argocd-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  # Scan result cache duration in seconds (Trivy scans are slow — don't lower below 60)
+  cacheTtlSeconds: 300
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Optional: set to a PVC name to persist the Trivy DB cache across pod restarts.
+  # When empty, the DB is re-downloaded after each pod restart (~30-60 s on first scan).
+  trivyCachePVC: ""
+
+# ── Extension proxy config ────────────────────────────────────────────────────
+extension:
+  # Name registered in ArgoCD extension.config — must match the proxy URL segment
+  name: cve
+
+  # Proxy connection settings
+  connectionTimeout: 30s
+  keepAlive: 15s
+  maxIdleConnections: 10

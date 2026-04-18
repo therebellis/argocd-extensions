@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cve-backend
+  namespace: {{ .Values.backend.namespace }}
+  labels:
+    {{- include "cve-scanner.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      app: cve-backend
+  template:
+    metadata:
+      labels:
+        app: cve-backend
+        {{- include "cve-scanner.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: cve-backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: cve-backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - containerPort: 8091
+          env:
+            - name: CACHE_TTL_SECONDS
+              value: {{ .Values.backend.cacheTtlSeconds | quote }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8091
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8091
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          {{- if .Values.backend.trivyCachePVC }}
+          volumeMounts:
+            - name: trivy-cache
+              mountPath: /home/appuser/.cache
+          {{- end }}
+      {{- if .Values.backend.trivyCachePVC }}
+      volumes:
+        - name: trivy-cache
+          persistentVolumeClaim:
+            claimName: {{ .Values.backend.trivyCachePVC }}
+      {{- end }}

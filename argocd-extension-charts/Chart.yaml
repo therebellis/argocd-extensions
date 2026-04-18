@@ -1,0 +1,19 @@
+apiVersion: v2
+name: cve-scanner
+description: >
+  ArgoCD UI extension that adds on-demand CVE scanning to every Application view.
+  Deploys the cve-backend service and wires the extension into an existing ArgoCD installation.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - argocd
+  - security
+  - cve
+  - trivy
+  - vulnerability
+home: https://github.com/therebellis/argocd-ai-plugin-cve
+sources:
+  - https://github.com/therebellis/argocd-ai-plugin-cve
+maintainers:
+  - name: therebellis
