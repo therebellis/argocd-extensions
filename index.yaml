@@ -3,11 +3,11 @@ entries:
   cve-scanner:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-18T13:05:24.115218477-04:00"
+    created: "2026-04-18T13:13:39.615494834-04:00"
     description: 'ArgoCD UI extension that adds on-demand CVE scanning to every Application
       view. Deploys the cve-backend service and wires the extension into an existing
       ArgoCD installation. '
-    digest: 5cea554dc2bc91517130e2cab084f30f31bccfb1cba1e331f663625beeffa319
+    digest: 1d034a47b95078d9d31c45d9333cf888bfb2e5bda5ac2167dbe570fd0b2f1b3c
     home: https://github.com/therebellis/argocd-ai-plugin-cve
     keywords:
     - argocd
@@ -24,4 +24,4 @@ entries:
     urls:
     - https://therebellis.github.io/argocd-extensions/cve-scanner-0.1.0.tgz
     version: 0.1.0
-generated: "2026-04-18T13:05:24.114024961-04:00"
+generated: "2026-04-18T13:13:39.614899484-04:00"
